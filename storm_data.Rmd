@@ -1,0 +1,169 @@
+---
+title: "Reprod Research"
+author: "Pratik Roy"
+date: '2022-04-28'
+output: html_document
+---
+
+
+### Synonpsis  
+In this report, we aim to analyze the impact of different weather events on public health and economy based on the storm database collected from the U.S. National Oceanic and Atmospheric Administration's (NOAA) from 1950 - 2011. We will use the estimates of fatalities, injuries, property and crop damage to decide which types of event are most harmful to the population health and economy. From these data, we found that excessive heat and tornado are most harmful with respect to population health, while flood, drought, and hurricane/typhoon have the greatest economic consequences.
+
+
+```{r}
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+```
+### Data Processing
+First, we download the data file and unzip it.
+```{r}
+if (!file.exists("StormData.csv.bz2")) {
+     fileUrl<-"https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+     download.file(fileUrl, destfile="StormData.csv.bz2")
+     
+     # Exit if the file is not available
+     if (!file.exists("StormData.csv.bz2")) {
+          stop("Can't locate file 'StormData.csv.bz2'!")
+     }
+}
+
+# Load the dataset
+stormDataRaw <- read.csv("StormData.csv.bz2")
+
+# Show the structure of the dataset
+str(stormDataRaw)
+```
+
+```{r}
+stormData <- select(stormDataRaw, BGN_DATE, EVTYPE, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP, FATALITIES, INJURIES)
+
+# Format the BGN_DATE variable as a date
+stormData$BGN_DATE <- as.Date(stormData$BGN_DATE, "%m/%d/%Y")
+stormData$YEAR <- year(stormData$BGN_DATE)
+
+# Tornado 1950 - 1954
+# Tornado, Thunderstorm Wind, Hail 1955 - 1995
+# 48 Events since 1996
+# Only use events since 1996
+stormData <- filter(stormData, YEAR >= 1996)
+
+# Only use events with either health impact or economic damage
+stormData <- filter(stormData, PROPDMG > 0 | CROPDMG > 0 | FATALITIES > 0 | INJURIES > 0)
+```
+
+
+```{r}
+table(stormData$PROPDMGEXP)
+```
+
+```{r}
+table(stormData$CROPDMGEXP)
+```
+
+
+```{r}
+stormData$PROPDMGEXP <- toupper(stormData$PROPDMGEXP)
+stormData$CROPDMGEXP <- toupper(stormData$CROPDMGEXP)
+
+stormData$CROPDMGFACTOR[(stormData$CROPDMGEXP == "")] <- 10^0
+stormData$CROPDMGFACTOR[(stormData$CROPDMGEXP == "?")] <- 10^0
+stormData$CROPDMGFACTOR[(stormData$CROPDMGEXP == "0")] <- 10^0
+stormData$CROPDMGFACTOR[(stormData$CROPDMGEXP == "2")] <- 10^2
+stormData$CROPDMGFACTOR[(stormData$CROPDMGEXP == "K")] <- 10^3
+stormData$CROPDMGFACTOR[(stormData$CROPDMGEXP == "M")] <- 10^6
+stormData$CROPDMGFACTOR[(stormData$CROPDMGEXP == "B")] <- 10^9
+
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "")] <- 10^0
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "-")] <- 10^0
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "?")] <- 10^0
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "+")] <- 10^0
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "0")] <- 10^0
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "1")] <- 10^1
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "2")] <- 10^2
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "3")] <- 10^3
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "4")] <- 10^4
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "5")] <- 10^5
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "6")] <- 10^6
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "7")] <- 10^7
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "8")] <- 10^8
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "H")] <- 10^2
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "K")] <- 10^3
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "M")] <- 10^6
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "B")] <- 10^9
+```
+
+
+```{r}
+stormData <- mutate(stormData, HEALTHIMP = FATALITIES + INJURIES)
+stormData <- mutate(stormData, ECONOMICCOST = PROPDMG * PROPDMGFACTOR + CROPDMG * CROPDMGFACTOR)
+```
+
+
+```{r}
+stormData$EVTYPE <- toupper(stormData$EVTYPE)
+dim(data.frame(table(stormData$EVTYPE)))
+```
+
+
+```{r}
+evtypeUnique <- unique(stormData$EVTYPE)
+evtypeUnique[grep("THUND", evtypeUnique)]
+```
+
+
+```{r}
+healthImpact <- with(stormData, aggregate(HEALTHIMP ~ EVTYPE, FUN = sum))
+subset(healthImpact, HEALTHIMP > quantile(HEALTHIMP, prob = 0.95))
+```
+
+
+```{r}
+stormData$EVTYPE[(stormData$EVTYPE == "TSTM WIND")] <- "THUNDERSTORM WIND"
+stormData$EVTYPE[(stormData$EVTYPE == "HURRICANE/TYPHOON")] <- "HURRICANE (TYPHOON)"
+```
+
+
+```{r}
+economicCost <- with(stormData, aggregate(ECONOMICCOST ~ EVTYPE, FUN = sum))
+subset(economicCost, ECONOMICCOST > quantile(ECONOMICCOST, prob = 0.95))
+```
+
+
+```{r}
+stormData$EVTYPE[(stormData$EVTYPE == "HURRICANE")] <- "HURRICANE (TYPHOON)"
+stormData$EVTYPE[(stormData$EVTYPE == "STORM SURGE")] <- "STORM SURGE/TIDE"
+```
+
+
+```{r}
+healthImpact <- stormData %>% 
+                group_by(EVTYPE) %>% 
+                summarise(HEALTHIMP = sum(HEALTHIMP)) %>% 
+                arrange(desc(HEALTHIMP))
+#healthImpact[1:10,]
+g1 <- ggplot(healthImpact[1:10,], aes(x=reorder(EVTYPE, -HEALTHIMP),y=HEALTHIMP,color=EVTYPE)) + 
+      geom_bar(stat="identity", fill="grey") + 
+      theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+      xlab("Event") + ylab("Number of fatalities and injuries") +
+      theme(legend.position="none") +
+      ggtitle("Fatalities and injuries in the US caused by severe weather events")
+g1
+```
+
+
+```{r}
+economicCost <- stormData %>% 
+                group_by(EVTYPE) %>% 
+                summarise(ECONOMICCOST = sum(ECONOMICCOST)) %>% 
+                arrange(desc(ECONOMICCOST))
+#economicCost[1:10,]
+g1 <- ggplot(economicCost[1:10,], aes(x=reorder(EVTYPE, -ECONOMICCOST),y=ECONOMICCOST,color=EVTYPE)) + 
+      geom_bar(stat="identity", fill="grey") + 
+      theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+      xlab("Event") + ylab("Economic cost in USD") +
+      theme(legend.position="none") +
+      ggtitle("Economic cost in the US caused by severe weather events")
+g1
+```
+
